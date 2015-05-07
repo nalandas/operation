@@ -1,0 +1,165 @@
+#!/bin/bash
+#set -x 
+source ./utils
+
+usage() {
+  echo "Options:"
+  echo " -h, --help                              Show help info"
+  echo " -n, --node <node number>                Mesos master node number, default: 3"
+  echo " -z, --zk <zookeeper cluster>            Zookeeper cluster, default: zoo1:2181,zoo2:2181,zoo3:2181"
+  echo " -o, --host-if <ethernet interface>      Ethernet interface which is used to communicate with the datanode on host, default: 'eth0'"
+  echo " -c, --container-if <ethernet interface> Ethernet interface which is used to assign IP address on container, default: 'eth1'"
+  echo " -m, --image <docker image>              Docker image name, default: mesos:0.0.2"
+  echo " -i, --container-ip <docker ip>          IP address of contatiner, default: dhcp"
+  echo " -d, --dc-name <dataceneter name>        Datacenter name which is used by consul DNS domain, default: zero"
+  echo " -u, --dns-upstream <upstream dns>       Upstream DNS for resolve, default: 10.16.20.3,1.2.4.8"
+  echo " -s, --consul-server <consul server>     The consul agent will join this Consul server (only for mesos slave), default: mesos_master_1"
+  echo " -v, --is-slave                          Run mesos slave, default: false"
+}
+
+function get_opts() {
+  OPTS=`getopt -o vhn:z:o:c:m:i:d:u:s: -l help -l node: -l zk: -l host-if: -l container-if: -l image: -l container-ip: -l dc-name: -l dns-upstream: -l consul-server: -l is-slave -- "$@"`
+  if [ $? != 0 ]
+  then
+    usage
+    exit 1
+  fi
+  eval set -- "$OPTS"
+  # Default values
+  NODE_COUNT=3
+  ZOO_CLUSTER="zoo1:2181,zoo2:2181,zoo3:2181"
+  HOST_INTERFACE=eth0
+  CONTAINER_IF=eth1
+  IMAGE_NAME=mesos:0.0.2
+  CONTAINER_IP=dhcp
+  DATACENTER_NAME=zero
+  DOMAIN_NAME=nalanda
+  DNS_UPSTREAM=10.16.20.3,1.2.4.8
+  IS_SLAVE=false
+  while true ; do
+    case "$1" in
+        -h|--help) usage; exit 1;;
+        -n|--node) NODE_COUNT=$2; shift 2;;
+        -z|--zk) ZOO_CLUSTER=$2; shift 2;;
+        -o|--host-if) HOST_INTERFACE=$2; shift 2;;
+        -c|--container-if) CONTAINER_IF=$2; shift 2;;
+        -m|--image) IMAGE_NAME=$2; shift 2;;
+        -i|--container-ip) CONTAINER_IP=$2; shift 2;;
+        -d|--dc-name) DATACENTER_NAME=$2; shift 2;;
+        -u|--ds-upstream) DNS_UPSTREAM=$2; shift 2;;
+        -s|--consul-server) CONSUL_SERVER=$2; shift 2;;
+        -v|--is-slave) IS_SLAVE=true; shift 1;;
+        --) shift; break;;
+    esac
+  done
+#echo "Args:"
+#for arg
+#do
+#    echo $arg
+#done
+}
+
+function start_slave() {
+  SDN_IP=$(get_new_sdn_ip $CONTAINER_IP 1)
+  echo "SDN_IP: $SDN_IP"
+  consul_command="/bin/consul agent -config-dir=/consul_config -join=$CONSUL_SERVER -dc=$DATACENTER_NAME"
+  sudo docker rm -f $container_name
+  sudo ./pipework $HOST_INTERFACE -i $CONTAINER_IF $(docker run  -d --privileged \
+  -v /sys:/sys \
+  -v /usr/bin/docker:/usr/bin/docker:ro \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v /lib64/libdevmapper.so.1.02:/lib/libdevmapper.so.1.02:ro \
+  -v /lib64/libpthread.so.0:/lib/libpthread.so.0:ro -v /lib64/libsqlite3.so.0:/lib/libsqlite3.so.0:ro \
+  -v /lib64/libudev.so.1:/lib/libudev.so.1:ro \
+  -e MESOS_HOSTNAME=$local_ip \
+  -e MESOS_MASTER=zk://$ZOO_CLUSTER/mesos \
+  -e MESOS_DOCKER_STOP_TIMEOUT=10secs \
+  -e MESOS_EXECUTOR_REGISTRATION_TIMEOUT=5mins \
+  -e MESOS_CONTAINERIZERS=docker,mesos \
+  -e MESOS_PORT=5051 \
+  -e CONTAINER_IF=$CONTAINER_IF \
+  -e MESOS_COMMAND=mesos-slave \
+  -e CONSUL_COMMAND="${consul_command}" \
+  -e GOMAXPROCS=2 -e DOMAIN_NAME=$DOMAIN_NAME \
+  -e MULTICLOUD_DNS=${SDN_IP%%/*} \
+  -e MULTICLOUD_DNS_SEARCH=${DATACENTER_NAME}.${DOMAIN_NAME} \
+  --hostname=$container_name \
+  -p 5051:5051 --name $container_name $IMAGE_NAME ) $SDN_IP
+}
+
+function start_master() {
+  for (( i=1; i<=$NODE_COUNT; i++ ))
+  do
+    command="/bin/consul agent -config-dir=/consul_config"
+    if [ $i -eq 1 ]; then
+      command="$command -bootstrap-expect=$NODE_COUNT"
+    else
+      command="$command -join=${CONTAINER_IP%%/*}"
+    fi
+
+    port1=$(expr 5049 + $i)
+    container_name=${script_prefix}_$i
+    SDN_IP=$(get_new_sdn_ip $CONTAINER_IP $i)
+    echo "SDN_IP: $SDN_IP"
+    sudo docker rm -f ${container_name}
+    echo "CONTAINER_IF=$CONTAINER_IF
+ZOO_CLUSTER=$ZOO_CLUSTER
+quorum=$quorum
+i=$i
+IMAGE_NAME=$IMAGE_NAME
+HOST_INTERFACE=$HOST_INTERFACE
+DOMAIN_NAME=$DOMAIN_NAME
+SDN_IP=$SDN_IP
+DATACENTER_NAME=$DATACENTER_NAME
+DNS_UPSTREAM='\"${DNS_UPSTREAM//,/\",\"}\"'
+container_name=$container_name
+consul_command=\"$command -server -dc=$DATACENTER_NAME -ui-dir=/ui -bind=${SDN_IP%%/*}\"" > mesos_master_${i}_temp.sh
+    echo '
+CONTAINER_ID=$(sudo docker run -d \
+    -e MESOS_WORK_DIR=/var/mesos \
+    -e MESOS_LOG_DIR=/var/log \
+    -e MESOS_ZK=zk://$ZOO_CLUSTER/mesos \
+    -e MESOS_QUORUM=$quorum \
+    -e MESOS_ZK_SESSION_TIMEOUT=30secs \
+    -e MESOS_REGISTRY_STORE_TIMEOUT=15secs \
+    -e MESOS_CLUSTER=Nalanda \
+    -e MESOS_PORT=5050 \
+    -e CONTAINER_IF=$CONTAINER_IF \
+    -e MESOS_COMMAND=mesos-master \
+    -e DOMAIN_NAME=$DOMAIN_NAME \
+    -e CONSUL_COMMAND="${consul_command}" \
+    -e GOMAXPROCS=2 \
+    -e MULTICLOUD_DNS=${SDN_IP%%/*} \
+    -e MULTICLOUD_DNS_SEARCH=${DATACENTER_NAME}.${DOMAIN_NAME} \
+    -e DNS_UPSTREAM="$DNS_UPSTREAM" \
+    --hostname $container_name \
+    --name $container_name $IMAGE_NAME) 
+sudo ./pipework $HOST_INTERFACE -i $CONTAINER_IF \
+    $CONTAINER_ID $SDN_IP' >> ${script_prefix}_${i}_temp.sh
+  done
+
+  # Start docker container in parallel
+  ls ${script_prefix}_*_temp.sh |xargs -P $NODE_COUNT -n 1 sh
+  rm -f ${script_prefix}_*_temp.sh
+}
+
+get_opts $@
+current_dir=$(pwd)
+
+script_prefix="mesos_master"
+container_name=${script_prefix}
+
+local_ip="$(ifconfig $HOST_INTERFACE | grep 'inet ' | awk '{print $2}')"
+if [ x"$IS_SLAVE" = x"true" ]; then
+  NODE_COUNT=1
+  script_prefix="mesos_slave"
+  container_name=${script_prefix}
+  start_slave
+  exit 0
+else
+  quorum=$(expr 1 + $NODE_COUNT / 2)
+  echo "quorum: $quorum"
+  start_master
+  exit 0
+fi
+

@@ -1,0 +1,87 @@
+#!/bin/bash
+#set -x 
+source ./utils
+
+usage() {
+  echo "Options:"
+  echo " -h, --help                              Show help info"
+  echo " -e, --expect <expect number>            Consul server node number, default is 3"
+  echo " -o, --host-if <ethernet interface>      Ethernet interface which is used to communicate with the datanode on host, default is 'eth0'"
+  echo " -c, --container-if <ethernet interface> Ethernet interface which is used to assign IP address on container, default is 'eth1'"
+  echo " -m, --image <docker image>              Docker image name, default: consul:0.0.1"
+  echo " -i, --container-ip <docker ip>          IP address of contatiner, default: dhcp"
+  echo " -d, --dc-name <dataceneter name>        Datacenter name which is used by consul DNS domain, default: zero"
+}
+
+OPTS=`getopt -o he:o:c:m:i:d: -l host -l expect: -l host-if: -l container-if: -l image: -l container-ip: -l dc-name: -- "$@"`
+if [ $? != 0 ]
+then
+  usage
+  exit 1
+fi
+eval set -- "$OPTS"
+# Default values
+NODE_COUNT=3
+HOST_INTERFACE=eth0
+CONTAINER_IF=eth1
+IMAGE_NAME=consul:0.0.1
+CONTAINER_IP=dhcp
+DATACENTER_NAME=zero
+DOMAIN_NAME=nalanda
+
+while true ; do
+    case "$1" in
+        -h|--help) usage; exit 1;;
+        -e|--expect) NODE_COUNT=$2; shift 2;;
+        -o|--host-if) HOST_INTERFACE=$2; shift 2;;
+        -c|--container-if) CONTAINER_IF=$2; shift 2;;
+        -m|--image) IMAGE_NAME=$2; shift 2;;
+        -i|--container-ip) CONTAINER_IP=$2; shift 2;;
+        -d|--dc-name) DATACENTER_NAME=$2; shift 2;;
+        --) shift; break;;
+    esac
+done
+#echo "Args:"
+#for arg
+#do
+#    echo $arg
+#done
+
+current_dir=$(pwd)
+script_prefix="consul_server"
+
+for (( i=1; i<=$NODE_COUNT; i++ ))
+do
+  if [ $i -eq 1 ]; then
+    command="-bootstrap-expect=$NODE_COUNT"
+  else
+    command="-join=${CONTAINER_IP%%/*}"
+  fi
+  SDN_IP=$(get_new_sdn_ip $CONTAINER_IP $i)
+  script_file=${script_prefix}_${i}_temp.sh
+  container_name=${script_prefix}_$i
+  echo "SDN_IP: $SDN_IP"
+  sudo docker stop $container_name
+  sudo docker rm $container_name
+  echo "CONTAINER_IF=$CONTAINER_IF
+IMAGE_NAME=$IMAGE_NAME
+HOST_INTERFACE=$HOST_INTERFACE
+SDN_IP=$SDN_IP
+DATACENTER_NAME=$DATACENTER_NAME
+DOMAIN_NAME=$DOMAIN_NAME
+container_name=$container_name
+command=\"$command\"" > $script_file
+  echo '
+CONTAINER_ID=`sudo docker run -d \
+    -e CONTAINER_IF=$CONTAINER_IF \
+    --hostname=$container_name \
+    --name $container_name $IMAGE_NAME \
+    $command -server -dc=$DATACENTER_NAME -ui-dir=/ui`
+sudo ./pipework $HOST_INTERFACE -i $CONTAINER_IF \
+    $CONTAINER_ID $SDN_IP' >> $script_file
+done
+
+# Start docker container in parallel
+ls ${script_prefix}*_temp.sh |xargs -P $NODE_COUNT -n 1 sh
+rm -f ${script_prefix}*_temp.sh
+
