@@ -83,7 +83,6 @@ function start_slave() {
   -e GOMAXPROCS=2 -e DOMAIN_NAME=$DOMAIN_NAME \
   -e MULTICLOUD_DNS=${SDN_IP%%/*} \
   -e MULTICLOUD_DNS_SEARCH=${DATACENTER_NAME}.${DOMAIN_NAME} \
-  --hostname=$container_name \
   -p 5051:5051 --name $container_name $IMAGE_NAME ) $SDN_IP
 }
 
