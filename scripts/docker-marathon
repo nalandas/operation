@@ -12,10 +12,12 @@ usage() {
   echo " -m, --image <docker image>              Docker image name, default: mesos:0.0.2"
   echo " -i, --container-ip <docker ip>          IP address of contatiner, default: dhcp"
   echo " -p, --jks-pass <JKS password>           JKS password which is used to generate the SSL key and certificate the jks when run marathon, the certicate (nalanda.jks) is under the $current_dir/ssl/."
+  echo " -d, --dns-server <DNS server>           DNS server in Mesos"
+  echo " -s, --dns-search <DNS search>           DNS search in Mesos"
 }
 
 function get_opts() {
-  OPTS=`getopt -o hn:z:o:c:m:i:p: -l help -l node: -l zk: -l host-if: -l container-if: -l image: -l container-ip: -l jks-pass: -- "$@"`
+  OPTS=`getopt -o hn:z:o:c:m:i:p:d:s: -l help -l node: -l zk: -l host-if: -l container-if: -l image: -l container-ip: -l jks-pass: -l dns-server: -l dns-search: -- "$@"`
   if [ $? != 0 ]
   then
     usage
@@ -41,6 +43,8 @@ function get_opts() {
         -m|--image) IMAGE_NAME=$2; shift 2;;
         -i|--container-ip) CONTAINER_IP=$2; shift 2;;
         -p|--jk-pass) NALANDA_JKS_PASSWORD=$2; shift 2;;
+        -d|--dns-server) MESOS_DNS_SERVER=$2; shift 2;;
+        -s|--dns-search) MESOS_DNS_SEARCH=$2; shift 2;;
         --) shift; break;;
     esac
   done
@@ -66,7 +70,9 @@ i=$i
 IMAGE_NAME=$IMAGE_NAME
 HOST_INTERFACE=$HOST_INTERFACE
 SDN_IP=$SDN_IP
-DISABLE_CONSUL=$DISABLE_CONSUL" > marathon_${i}_temp.sh
+DISABLE_CONSUL=$DISABLE_CONSUL
+MESOS_DNS_SERVER=$MESOS_DNS_SERVER
+MESOS_DNS_SEARCH=$MESOS_DNS_SEARCH" > marathon_${i}_temp.sh
     echo '
 CONTAINER_ID=`sudo docker run -d \
     -v $current_dir/ssl:/tmp/ssl \
@@ -79,6 +85,8 @@ CONTAINER_ID=`sudo docker run -d \
     -e CONTAINER_IF=$CONTAINER_IF \
     -e DISABLE_CONSUL=$DISABLE_CONSUL \
     -e MESOS_COMMAND=marathon \
+    -e MULTICLOUD_DNS=${MESOS_DNS_SERVER} \
+    -e MULTICLOUD_DNS_SEARCH=${MESOS_DNS_SEARCH} \
     --name marathon_$i $IMAGE_NAME`
 sudo ./pipework $HOST_INTERFACE -i $CONTAINER_IF \
     $CONTAINER_ID $SDN_IP' >> marathon_${i}_temp.sh
