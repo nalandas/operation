@@ -1,0 +1,109 @@
+#!/bin/bash
+#set -x 
+source ./utils
+
+usage() {
+  echo "Options:"
+  echo " -h, --help                              Show help info"
+  echo " -n, --node <node number>                Marathon node number, default: 3"
+  echo " -z, --zk <zookeeper cluster>            Zookeeper cluster, default: zoo1:2181,zoo2:2181,zoo3:2181"
+  echo " -o, --host-if <ethernet interface>      Ethernet interface which is used to communicate with the datanode on host, default: 'eth0'"
+  echo " -c, --container-if <ethernet interface> Ethernet interface which is used to assign IP address on container, default: 'eth1'"
+  echo " -m, --image <docker image>              Docker image name, default: mesos:0.0.2"
+  echo " -i, --container-ip <docker ip>          IP address of contatiner, default: dhcp"
+  echo " -p, --jks-pass <JKS password>           JKS password which is used to generate the SSL key and certificate the jks when run marathon, the certicate (nalanda.jks) is under the $current_dir/ssl/."
+}
+
+function get_opts() {
+  OPTS=`getopt -o hn:z:o:c:m:i:p: -l help -l node: -l zk: -l host-if: -l container-if: -l image: -l container-ip: -l jks-pass: -- "$@"`
+  if [ $? != 0 ]
+  then
+    usage
+    exit 1
+  fi
+  eval set -- "$OPTS"
+  # Default values
+  NODE_COUNT=3
+  ZOO_CLUSTER="zoo1:2181,zoo2:2181,zoo3:2181"
+  HOST_INTERFACE=eth0
+  CONTAINER_IF=eth1
+  IMAGE_NAME=mesos:0.0.2
+  CONTAINER_IP=dhcp
+  DISABLE_CONSUL=true
+  NALANDA_JKS_PASSWORD=passw0rd
+  while true ; do
+    case "$1" in
+        -h|--help) usage; exit 1;;
+        -n|--node) NODE_COUNT=$2; shift 2;;
+        -z|--zk) ZOO_CLUSTER=$2; shift 2;;
+        -o|--host-if) HOST_INTERFACE=$2; shift 2;;
+        -c|--container-if) CONTAINER_IF=$2; shift 2;;
+        -m|--image) IMAGE_NAME=$2; shift 2;;
+        -i|--container-ip) CONTAINER_IP=$2; shift 2;;
+        -p|--jk-pass) NALANDA_JKS_PASSWORD=$2; shift 2;;
+        --) shift; break;;
+    esac
+  done
+#echo "Args:"
+#for arg
+#do
+#    echo $arg
+#done
+}
+
+function start_marathon() {
+  for (( i=1; i<=$NODE_COUNT; i++ ))
+  do
+    SDN_IP=$(get_new_sdn_ip $CONTAINER_IP $i)
+    echo "SDN_IP: $SDN_IP"
+    sudo docker rm -f marathon_$i
+    echo "CONTAINER_IF=$CONTAINER_IF
+current_dir=$current_dir
+NALANDA_JKS_PASSWORD=$NALANDA_JKS_PASSWORD
+ZOO_CLUSTER=$ZOO_CLUSTER
+quorum=$quorum
+i=$i
+IMAGE_NAME=$IMAGE_NAME
+HOST_INTERFACE=$HOST_INTERFACE
+SDN_IP=$SDN_IP
+DISABLE_CONSUL=$DISABLE_CONSUL" > marathon_${i}_temp.sh
+    echo '
+CONTAINER_ID=`sudo docker run -d \
+    -v $current_dir/ssl:/tmp/ssl \
+    -e MARATHON_MASTER=zk://$ZOO_CLUSTER/mesos \
+    -e MARATHON_ZK=zk://$ZOO_CLUSTER/marathon \
+    -e MARATHON_SSL_KEYSTORE_PATH=/tmp/ssl/nalanda.jks \
+    -e MARATHON_SSL_KEYSTORE_PASSWORD=$NALANDA_JKS_PASSWORD \
+    -e MARATHON_HTTP_PORT=8080 \
+    -e MARATHON_HTTPS_PORT=8443 \
+    -e CONTAINER_IF=$CONTAINER_IF \
+    -e DISABLE_CONSUL=$DISABLE_CONSUL \
+    -e MESOS_COMMAND=marathon \
+    --name marathon_$i $IMAGE_NAME`
+sudo ./pipework $HOST_INTERFACE -i $CONTAINER_IF \
+    $CONTAINER_ID $SDN_IP' >> marathon_${i}_temp.sh
+  done
+
+  # Start docker container in parallel
+  ls marathon_*_temp.sh |xargs -P $NODE_COUNT -n 1 sh
+  rm -f marathon_*_temp.sh
+}
+
+current_dir=$(pwd)
+get_opts $@
+
+local_ip="$(ifconfig $INTERFACE | grep 'inet ' | awk '{print $2}')"
+if [ x"$NALANDA_JKS_PASSWORD" = x"" ]; then
+  echo "JKS Password is required!!"
+  exit 1
+fi
+
+if [ -f $current_dir/ssl/nalanda.jks ]; then
+  echo "Find $current_dir/ssl/nalanda.jks, will use it."
+else
+  echo "Generate new SLL certificate!!"
+  generate_ssl_certificate_jks $current_dir/ssl/ "nalanda" "$NALANDA_JKS_PASSWORD"
+fi
+
+start_marathon
+
