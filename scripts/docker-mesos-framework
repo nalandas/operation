@@ -5,6 +5,7 @@ source ./utils
 usage() {
   echo "Options:"
   echo " -h, --help                              Show help info"
+  echo " -f, --framework <Framework name>        The Mesos framework you want to run, we support: marathon, chronos, default: marathon"
   echo " -n, --node <node number>                Marathon node number, default: 3"
   echo " -z, --zk <zookeeper cluster>            Zookeeper cluster, default: zoo1:2181,zoo2:2181,zoo3:2181"
   echo " -o, --host-if <ethernet interface>      Ethernet interface which is used to communicate with the datanode on host, default: 'eth0'"
@@ -17,7 +18,7 @@ usage() {
 }
 
 function get_opts() {
-  OPTS=`getopt -o hn:z:o:c:m:i:p:d:s: -l help -l node: -l zk: -l host-if: -l container-if: -l image: -l container-ip: -l jks-pass: -l dns-server: -l dns-search: -- "$@"`
+  OPTS=`getopt -o hn:z:o:c:m:i:p:d:s:f: -l help -l node: -l zk: -l host-if: -l container-if: -l image: -l container-ip: -l jks-pass: -l dns-server: -l dns-search: -l framework: -- "$@"`
   if [ $? != 0 ]
   then
     usage
@@ -33,6 +34,7 @@ function get_opts() {
   CONTAINER_IP=dhcp
   DISABLE_CONSUL=true
   NALANDA_JKS_PASSWORD=passw0rd
+  MESOS_FRAMEWORK=marathon
   while true ; do
     case "$1" in
         -h|--help) usage; exit 1;;
@@ -45,6 +47,7 @@ function get_opts() {
         -p|--jk-pass) NALANDA_JKS_PASSWORD=$2; shift 2;;
         -d|--dns-server) MESOS_DNS_SERVER=$2; shift 2;;
         -s|--dns-search) MESOS_DNS_SEARCH=$2; shift 2;;
+        -f|--framework) MESOS_FRAMEWORK=$2; shift 2;;
         --) shift; break;;
     esac
   done
@@ -97,6 +100,52 @@ sudo ./pipework $HOST_INTERFACE -i $CONTAINER_IF \
   rm -f marathon_*_temp.sh
 }
 
+function start_chronos() {
+  for (( i=1; i<=$NODE_COUNT; i++ ))
+  do
+    SDN_IP=$(get_new_sdn_ip $CONTAINER_IP $i)
+    echo "SDN_IP: $SDN_IP"
+    sudo docker rm -f chronos_$i
+    echo "CONTAINER_IF=$CONTAINER_IF
+current_dir=$current_dir
+CHRONOS_JKS_PASSWORD=$CHRONOS_JKS_PASSWORD
+ZOO_CLUSTER=$ZOO_CLUSTER
+quorum=$quorum
+i=$i
+IMAGE_NAME=$IMAGE_NAME
+HOST_INTERFACE=$HOST_INTERFACE
+SDN_IP=$SDN_IP
+DISABLE_CONSUL=$DISABLE_CONSUL
+MESOS_DNS_SERVER=$MESOS_DNS_SERVER
+MESOS_DNS_SEARCH=$MESOS_DNS_SEARCH" > chronos_${i}_temp.sh
+    rm -rf $current_dir/chronos/conf/chronos_${i}
+    mkdir -p $current_dir/chronos/conf/chronos_${i}
+    echo "zk://$ZOO_CLUSTER/mesos" >$current_dir/chronos/conf/chronos_${i}/master
+    echo "$ZOO_CLUSTER" > $current_dir/chronos/conf/chronos_${i}/zk_hosts
+    echo "/chronos/state" > $current_dir/chronos/conf/chronos_${i}/zk_path
+    echo "/tmp/ssl/nalanda.jks" > $current_dir/chronos/conf/chronos_${i}/ssl_keystore_path
+    echo "$NALANDA_JKS_PASSWORD" > $current_dir/chronos/conf/chronos_${i}/ssl_keystore_password
+    echo "8080" > $current_dir/chronos/conf/chronos_${i}/http_port
+    echo "8443" > $current_dir/chronos/conf/chronos_${i}/https_port
+    echo '
+CONTAINER_ID=`sudo docker run -d \
+    -v $current_dir/ssl:/tmp/ssl \
+    -v $current_dir/chronos/conf/chronos_${i}:/etc/chronos/conf \
+    -e CONTAINER_IF=$CONTAINER_IF \
+    -e MULTICLOUD_DNS=${MESOS_DNS_SERVER} \
+    -e MULTICLOUD_DNS_SEARCH=${MESOS_DNS_SEARCH} \
+    -e DISABLE_CONSUL=$DISABLE_CONSUL \
+    -e MESOS_COMMAND=chronos \
+    --name chronos_$i $IMAGE_NAME` 
+sudo ./pipework $HOST_INTERFACE -i $CONTAINER_IF \
+    $CONTAINER_ID $SDN_IP' >> chronos_${i}_temp.sh
+  done
+
+  # Start docker container in parallel
+  ls chronos_*_temp.sh |xargs -P $NODE_COUNT -n 1 sh
+  rm -f chronos_*_temp.sh
+}
+
 current_dir=$(pwd)
 get_opts $@
 
@@ -113,5 +162,9 @@ else
   generate_ssl_certificate_jks $current_dir/ssl/ "nalanda" "$NALANDA_JKS_PASSWORD"
 fi
 
-start_marathon
+case "$MESOS_FRAMEWORK" in
+  "marathon") start_marathon;;
+  "chronos") start_chronos;;
+  *) echo "Unknown framework $MESOS_FRAMEWORK!!"; exit 1;;
+esac
 
