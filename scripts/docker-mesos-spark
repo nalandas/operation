@@ -1,0 +1,70 @@
+#!/bin/bash
+#set -x 
+source ./utils
+
+usage() {
+  echo "Options:"
+  echo " -h, --help                              Show help info"
+  echo " -o, --host-if <ethernet interface>      Ethernet interface which is used to communicate with the datanode on host, default: 'eth0'"
+  echo " -c, --container-if <ethernet interface> Ethernet interface which is used to assign IP address on container, default: 'eth1'"
+  echo " -m, --image <docker image>              Docker image name, default: mesos:0.0.2"
+  echo " -i, --container-ip <docker ip>          IP address of contatiner, default: dhcp"
+  echo " -f, --hdfs-fs <HDFS FS host>            HDFS FS host, default: hdfsnamenode:8020"
+  echo " -p, --hdfs-http <HDFS HTTP host>        HDFS HTTP host, default: hdfsnamenode:50070"
+  echo " -s, --master <spark master>             spark master, default: mesos://zk://zoo1:2181/mesos"
+}
+
+function get_opts() {
+  OPTS=`getopt -o hp:s:o:c:m:i:f: -l help -l host-if: -l container-if: -l image: -l container-ip: -l hdfs-fs: -l hdfs-http: -l master: -- "$@"`
+  if [ $? != 0 ]
+  then
+    usage
+    exit 1
+  fi
+  eval set -- "$OPTS"
+  # Default values
+  HOST_INTERFACE=eth0
+  CONTAINER_IF=eth1
+  IMAGE_NAME=mesos:0.0.2
+  CONTAINER_IP=dhcp
+  HDFS_FS_HOST=${5:-hdfsnamenode:8020}
+  HDFS_HTTP_HOST=${6:-hdfsnamenode:50070}
+  SPARK_MASTER=${7:-mesos://zk://zoo1:2181/mesos}
+
+  while true ; do
+    case "$1" in
+        -h|--help) usage; exit 1;;
+        -o|--host-if) HOST_INTERFACE=$2; shift 2;;
+        -c|--container-if) CONTAINER_IF=$2; shift 2;;
+        -m|--image) IMAGE_NAME=$2; shift 2;;
+        -i|--container-ip) CONTAINER_IP=$2; shift 2;;
+        -f|--hdfs-fs) HDFS_FS_HOST=$2; shift 2;;
+        -p|--hdfs-http) HDFS_HTTP_HOST=$2; shift 2;;
+        -s|--master) SPARK_MASTER=$2; shift 2;;
+        --) shift; break;;
+    esac
+  done
+#echo "Args:"
+#for arg
+#do
+#    echo $arg
+#done
+}
+
+get_opts $@
+current_dir=$(pwd)
+script_prefix="spark"
+
+local_ip="$(ifconfig $HOST_INTERFACE | grep 'inet ' | awk '{print $2}')"
+container_name=${script_prefix}
+sudo docker rm -f $container_name
+sudo ./pipework $HOST_INTERFACE -i $CONTAINER_IF \
+    $(docker run -d -t \
+    -p 4040:4040 -p 42285:42285\
+    -e CONTAINER_IF=$CONTAINER_IF \
+    -e HDFS_FS_HOST=$HDFS_FS_HOST \
+    -e HDFS_HTTP_HOST=$HDFS_HTTP_HOST \
+    -e SPARK_MASTER=$SPARK_MASTER \
+    --hostname=${CONTAINER_IP%%/*} \
+    --name $container_name $IMAGE_NAME bash) $CONTAINER_IP
+
