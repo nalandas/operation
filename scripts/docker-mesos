@@ -62,6 +62,7 @@ function get_opts() {
 function start_slave() {
   SDN_IP=$(get_new_sdn_ip $CONTAINER_IP 1)
   echo "SDN_IP: $SDN_IP"
+  mesos_command=/tmp/mesos/build/bin/mesos-slave.sh
   consul_command="/bin/consul agent -config-dir=/consul_config -join=$CONSUL_SERVER -dc=$DATACENTER_NAME"
   sudo docker rm -f $container_name
   sudo ./pipework $HOST_INTERFACE -i $CONTAINER_IF $(docker run  -d --privileged \
@@ -77,8 +78,9 @@ function start_slave() {
   -e MESOS_EXECUTOR_REGISTRATION_TIMEOUT=5mins \
   -e MESOS_CONTAINERIZERS=docker,mesos \
   -e MESOS_PORT=5051 \
+  -e MESOS_VERSION=false \
   -e CONTAINER_IF=$CONTAINER_IF \
-  -e MESOS_COMMAND=mesos-slave \
+  -e MESOS_COMMAND=$mesos_command \
   -e CONSUL_COMMAND="${consul_command}" \
   -e GOMAXPROCS=2 -e DOMAIN_NAME=$DOMAIN_NAME \
   -e MULTICLOUD_DNS=${SDN_IP%%/*} \
@@ -112,6 +114,7 @@ SDN_IP=$SDN_IP
 DATACENTER_NAME=$DATACENTER_NAME
 DNS_UPSTREAM='\"${DNS_UPSTREAM//,/\",\"}\"'
 container_name=$container_name
+mesos_command=/tmp/mesos/build/bin/mesos-master.sh
 consul_command=\"$command -server -dc=$DATACENTER_NAME -ui-dir=/ui -bind=${SDN_IP%%/*}\"" > mesos_master_${i}_temp.sh
     echo '
 CONTAINER_ID=$(sudo docker run -d \
@@ -123,8 +126,9 @@ CONTAINER_ID=$(sudo docker run -d \
     -e MESOS_REGISTRY_STORE_TIMEOUT=15secs \
     -e MESOS_CLUSTER=Nalanda \
     -e MESOS_PORT=5050 \
+    -e MESOS_VERSION=false \
     -e CONTAINER_IF=$CONTAINER_IF \
-    -e MESOS_COMMAND=mesos-master \
+    -e MESOS_COMMAND=$mesos_command \
     -e DOMAIN_NAME=$DOMAIN_NAME \
     -e CONSUL_COMMAND="${consul_command}" \
     -e GOMAXPROCS=2 \
