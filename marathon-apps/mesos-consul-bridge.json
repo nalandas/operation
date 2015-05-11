@@ -1,0 +1,17 @@
+{
+  "args": [
+    "--zk=zk://192.168.200.7:2181,192.168.200.7:2182,192.168.200.7:2183/mesos",
+    "--log-level=DEBUG"
+  ],  
+  "container": {
+    "type": "DOCKER",
+    "docker": {
+      "image": "192.168.200.3:5000/mesos-consul-bridge:0.0.1"
+    }   
+  },  
+  "constraints": [["hostname", "CLUSTER", "192.168.200.31"]],
+  "id": "mesos-consul",
+  "instances": 1,
+  "cpus": 0.1,
+  "mem": 512
+}

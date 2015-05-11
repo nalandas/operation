@@ -1,0 +1,14 @@
+{
+  "id": "zookeeper3",
+  "name": "zookeeper3",
+  "tags": [
+    "zookeeper"
+  ],
+  "address": "192.168.200.7",
+  "port": 2183,
+  "check": {
+    "script": "nc 192.168.200.7 2183 </dev/null",
+    "interval": "20s"
+  }
+}
+
