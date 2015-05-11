@@ -1,0 +1,17 @@
+#!/bin/bash
+
+INTERFACE=${1:-eth0}
+macvlan_device=${INTERFACE}m
+ip link delet $macvlan_device
+ip link add link $INTERFACE dev $macvlan_device type macvlan mode bridge
+ip link set $macvlan_device up
+local_ip="$(ip addr show $INTERFACE | grep 'inet ' | awk '{print $2}')"
+gateway_ip="$(ip route show dev eth0 |grep default | awk '{print $3}' |head -n 1)"
+echo "local_ip: $local_ip, gateway_ip: $gateway_ip"
+if [[ x"$local_ip" != x"" && x"$gateway_ip" != x"" ]]; then
+  echo "Update macvlan device router!!"
+  ip addr del $local_ip dev $INTERFACE && ip addr add $local_ip dev $macvlan_device && route add default gw $gateway_ip
+else
+  echo "Nothing to do!!"
+  exit 1
+fi
