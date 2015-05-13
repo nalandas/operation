@@ -67,6 +67,7 @@ function start_slave() {
   sudo docker rm -f $container_name
   sudo ./pipework $HOST_INTERFACE -i $CONTAINER_IF $(docker run  -d --privileged \
   -v /sys:/sys \
+  -v /proc:/proc \
   -v /usr/bin/docker:/usr/bin/docker:ro \
   -v /var/run/docker.sock:/var/run/docker.sock \
   -v /lib64/libdevmapper.so.1.02:/lib/libdevmapper.so.1.02:ro \
@@ -76,6 +77,7 @@ function start_slave() {
   -e MESOS_MASTER=zk://$ZOO_CLUSTER/mesos \
   -e MESOS_DOCKER_STOP_TIMEOUT=10secs \
   -e MESOS_EXECUTOR_REGISTRATION_TIMEOUT=5mins \
+  -e MESOS_ISOLATOR=cgroups/cpu,cgroups/mem \
   -e MESOS_CONTAINERIZERS=docker,mesos \
   -e MESOS_PORT=5051 \
   -e MESOS_VERSION=false \
