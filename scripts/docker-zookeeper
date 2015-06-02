@@ -24,7 +24,7 @@ done
 
 #local_ip="$(ifconfig $INTERFACE | grep 'inet ' | awk '{print $2}')"
 # Generate zookeeper conf
-/bin/cp -f ../zookeeper/conf/zoo.cfg ./zookeeper/conf/zoo.cfg.tmp
+/bin/cp -f ../../zookeeper/conf/zoo.cfg ./zookeeper/conf/zoo.cfg.tmp
 for (( i=1; i<=$NODE_COUNT; i++ ))
 do
   #port1=$(expr 2887 + $i)
