@@ -11,11 +11,12 @@ usage() {
   echo " -o, --host-if <ethernet interface>      Ethernet interface which is used to communicate with the datanode on host, default: 'eth0'"
   echo " -c, --container-if <ethernet interface> Ethernet interface which is used to assign IP address on container, default: 'eth1'"
   echo " -m, --image <docker image>              Docker image name, default: hadoop-cdh5-hdfs-datanode:0.0.1"
+  echo " -v, --volume <local file dir>           DFS data node should store its blocks, default: $current/dn"
   echo " -i, --container-ip <docker ip>          IP address of contatiner, example: dhcp or 192.168.200.23/24@192.168.200.1, if it does not provided, will use the ip address on hosts for port mapping."
 }
 
 function get_opts() {
-  OPTS=`getopt -o vha:p:n:o:c:m:i: -l help -l node: -l namenode: -l fs-port: -l host-if: -l container-if: -l image: -l container-ip: -- "$@"`
+  OPTS=`getopt -o ha:p:n:o:c:m:i:v: -l help -l node: -l namenode: -l fs-port: -l host-if: -l container-if: -l image: -l container-ip: -l volume -- "$@"`
   if [ $? != 0 ]
   then
     usage
@@ -30,6 +31,7 @@ function get_opts() {
   HOST_INTERFACE=eth0
   CONTAINER_IF=eth1
   IMAGE_NAME=hadoop-cdh5-hdfs-datanode:0.0.1
+  VOLUME=$current_dir/dn
   while true ; do
     case "$1" in
         -h|--help) usage; exit 1;;
@@ -40,6 +42,7 @@ function get_opts() {
         -c|--container-if) CONTAINER_IF=$2; shift 2;;
         -m|--image) IMAGE_NAME=$2; shift 2;;
         -i|--container-ip) CONTAINER_IP=$2; shift 2;;
+        -v|--volume) VOLUME=$2; shift 2;;
         --) shift; break;;
     esac
   done
@@ -60,10 +63,12 @@ do
   port2=$(expr 50020 + $i - 1)
   port3=$(expr 50075 + $i - 1)
   port4=$(expr 50475 + $i - 1)
+  volume_dir=$VOLUME/$i
   SDN_IP=$(get_new_sdn_ip "$CONTAINER_IP" $i)
   script_file=${script_prefix}_${i}_temp.sh
   container_name=${script_prefix}_$i
   echo "SDN_IP: $SDN_IP"
+  sudo mkdir -p $volume_dir
   sudo docker rm -f $container_name
   echo "CONTAINER_IF=$CONTAINER_IF
 i=$i
@@ -73,16 +78,19 @@ HOST_INTERFACE=$HOST_INTERFACE
 SDN_IP=$SDN_IP
 HDFS_DATANODE_SERVER_PORT=$port1
 HDFS_DATANODE_IPC_PORT=$port2
+
 HDFS_DATANODE_HTTP_PORT=$port3
 HDFS_DATANODE_HTTPS_PORT=$port4
 HDFS_NN_SERVER=$HDFS_NN_SERVER
 HDFS_NN_PORT=$HDFS_NN_PORT
-container_name=$container_name" > $script_file
+container_name=$container_name
+volume_dir=$volume_dir" > $script_file
 echo 'params="-p $HDFS_DATANODE_SERVER_PORT:$HDFS_DATANODE_SERVER_PORT -p $HDFS_DATANODE_IPC_PORT:$HDFS_DATANODE_IPC_PORT \
 -p $HDFS_DATANODE_HTTP_PORT:$HDFS_DATANODE_HTTP_PORT -p $HDFS_DATANODE_HTTPS_PORT:$HDFS_DATANODE_HTTPS_PORT \
 -e HDFS_DATANODE_SERVER_PORT=$HDFS_DATANODE_SERVER_PORT -e HDFS_DATANODE_IPC_PORT=$HDFS_DATANODE_IPC_PORT \
 -e HDFS_DATANODE_HTTP_PORT=$HDFS_DATANODE_HTTP_PORT -e HDFS_DATANODE_HTTPS_PORT=$HDFS_DATANODE_HTTPS_PORT \
--e HDFSNAMENODERPC_SERVICE_HOST=$HDFS_NN_SERVER -e HDFSNAMENODERPC_SERVICE_PORT=$HDFS_NN_PORT "' >> $script_file
+-e HDFSNAMENODERPC_SERVICE_HOST=$HDFS_NN_SERVER -e HDFSNAMENODERPC_SERVICE_PORT=$HDFS_NN_PORT 
+-v $volume_dir:/var/lib/hadoop-hdfs/cache/hdfs/dfs/data"' >> $script_file
 if [ x"" != x"$SDN_IP" ]; then
   echo 'params=$params" -e CONTAINER_IF=$CONTAINER_IF --hostname=${SDN_IP%%/*}"' >> $script_file
 else
