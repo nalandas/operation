@@ -1,27 +1,58 @@
 #!/bin/bash
 #set -x 
-echo "Arguments list:"
-echo "\$1: Ethernet interface which is used to communicate with the namenode on host, default is 'eth0'"
-echo "\$2: Ethernet interface which is used to assign IP address on container, default is 'eth1'"
-echo "\$3: Docker image name, default: hadoop-cdh5-hdfs-namenode:0.0.1"
-echo "\$4: IP address of contatiner, default: dhcp"
-
 source ./utils
 
-HOST_INTERFACE=${1:-eth0}
-CONTAINER_IF=${2:-eth1}
-IMAGE_NAME=${3:-hadoop-cdh5-hdfs-namenode:0.0.1}
-CONTAINER_IP=${4:-dhcp}
-current_dir=$(pwd)
+usage() {
+  echo "Options:"
+  echo " -h, --help                              Show help info"
+  echo " -o, --host-if <ethernet interface>      Ethernet interface which is used to communicate with the datanode on host, default: 'eth0'"
+  echo " -c, --container-if <ethernet interface> Ethernet interface which is used to assign IP address on container, default: 'eth1'"
+  echo " -m, --image <docker image>              Docker image name, default: hadoop-cdh5-hdfs-namenode:0.0.1"
+  echo " -i, --container-ip <docker ip>          IP address of contatiner, example: dhcp or 192.168.200.23/24@192.168.200.1, if it does not provided, will use the ip address on hosts for port mapping."
+}
 
+function get_opts() {
+  OPTS=`getopt -o vho:c:m:i: -l help -l host-if: -l container-if: -l image: -l container-ip: -- "$@"`
+  if [ $? != 0 ]
+  then
+    usage
+    exit 1
+  fi
+  eval set -- "$OPTS"
+  # Default values
+  HOST_INTERFACE=eth0
+  CONTAINER_IF=eth1
+  IMAGE_NAME=hadoop-cdh5-hdfs-namenode:0.0.1
+  CONTAINER_IP=""
+  while true ; do
+    case "$1" in
+        -h|--help) usage; exit 1;;
+        -o|--host-if) HOST_INTERFACE=$2; shift 2;;
+        -c|--container-if) CONTAINER_IF=$2; shift 2;;
+        -m|--image) IMAGE_NAME=$2; shift 2;;
+        -i|--container-ip) CONTAINER_IP=$2; shift 2;;
+        --) shift; break;;
+    esac
+  done
+}
+
+get_opts $@
 script_prefix="hdfs_namenode"
 
 local_ip="$(ifconfig $HOST_INTERFACE | grep 'inet ' | awk '{print $2}')"
+if [[ $local_ip == addr:* ]]; then
+  local_ip=${local_ip#*addr:}
+fi
 container_name=${script_prefix}
 sudo docker rm -f $container_name
-sudo ./pipework $HOST_INTERFACE -i $CONTAINER_IF \
-    $(docker run -d \
-    -p 8020:8020 -p 50070:50070 \
-    -e CONTAINER_IF=$CONTAINER_IF \
-    --name $container_name $IMAGE_NAME) $CONTAINER_IP
+PARAMS="-p 8020:8020 -p 50070:50070 -p 50470:50470 --name $container_name $IMAGE_NAME"
+if [ x"$CONTAINER_IP" != x"" ]; then
+  PARAMS="-e CONTAINER_IF=$CONTAINER_IF "$PARAMS
+else
+  PARAMS="--hostname=$local_ip "$PARAMS
+fi
+container_id=$(sudo docker run -d $PARAMS)
 
+if [ x"$CONTAINER_IP" != x"" ]; then
+  sudo ./pipework $HOST_INTERFACE -i $CONTAINER_IF $container_id $CONTAINER_IP
+fi

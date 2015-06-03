@@ -3,7 +3,9 @@ function get_new_sdn_ip() {
   CONTAINER_IP=$1
   i=$2
   SDN_IP=$CONTAINER_IP
-  if [ x"$CONTAINER_IP" != x"dhcp" ]; then
+  if [ x"$CONTAINER_IP" = x"" ]; then
+    SDN_IP=""
+  elif [ x"$CONTAINER_IP" != x"dhcp" ]; then
     GATEWAY="${CONTAINER_IP#*@}" GATEWAY="${GATEWAY%%@*}"
     IPADDR="${CONTAINER_IP%%@*}"
      echo $IPADDR | grep -q / || {
