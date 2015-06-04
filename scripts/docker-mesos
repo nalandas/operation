@@ -7,6 +7,7 @@ usage() {
   echo " -h, --help                              Show help info"
   echo " -n, --node <node number>                Mesos master node number, default: 3"
   echo " -z, --zk <zookeeper cluster>            Zookeeper cluster, default: zoo1:2181,zoo2:2181,zoo3:2181"
+  echo " -w, --work-dir <local folder>           Where to store the persistent information stored in the Registry. It will be a docker volume, default: $current_dir"
   echo " -o, --host-if <ethernet interface>      Ethernet interface which is used to communicate with the datanode on host, default: 'eth0'"
   echo " -c, --container-if <ethernet interface> Ethernet interface which is used to assign IP address on container, default: 'eth1'"
   echo " -m, --image <docker image>              Docker image name, default: mesos:0.0.2"
@@ -18,7 +19,7 @@ usage() {
 }
 
 function get_opts() {
-  OPTS=`getopt -o vhn:z:o:c:m:i:d:u:s: -l help -l node: -l zk: -l host-if: -l container-if: -l image: -l container-ip: -l dc-name: -l dns-upstream: -l consul-server: -l is-slave -- "$@"`
+  OPTS=`getopt -o vhn:w:z:o:c:m:i:d:u:s: -l help -l node: -l work-dir: -l zk: -l host-if: -l container-if: -l image: -l container-ip: -l dc-name: -l dns-upstream: -l consul-server: -l is-slave -- "$@"`
   if [ $? != 0 ]
   then
     usage
@@ -36,11 +37,13 @@ function get_opts() {
   DOMAIN_NAME=nalanda
   DNS_UPSTREAM=10.16.20.3,1.2.4.8
   IS_SLAVE=false
+  VOLUME=$current_dir/mesos
   while true ; do
     case "$1" in
         -h|--help) usage; exit 1;;
         -n|--node) NODE_COUNT=$2; shift 2;;
         -z|--zk) ZOO_CLUSTER=$2; shift 2;;
+        -w|--work-dir) VOLUME=$2; shift 2;;
         -o|--host-if) HOST_INTERFACE=$2; shift 2;;
         -c|--container-if) CONTAINER_IF=$2; shift 2;;
         -m|--image) IMAGE_NAME=$2; shift 2;;
@@ -72,6 +75,8 @@ function start_slave() {
   -v /lib64/libdevmapper.so.1.02:/lib/libdevmapper.so.1.02:ro \
   -v /lib64/libpthread.so.0:/lib/libpthread.so.0:ro -v /lib64/libsqlite3.so.0:/lib/libsqlite3.so.0:ro \
   -v /lib64/libudev.so.1:/lib/libudev.so.1:ro \
+  -v $VOLUME/slave:/var/mesos \
+  -e MESOS_WORK_DIR=/var/mesos \
   -e MESOS_HOSTNAME=$local_ip \
   -e MESOS_MASTER=zk://$ZOO_CLUSTER/mesos \
   -e MESOS_DOCKER_STOP_TIMEOUT=10secs \
@@ -108,6 +113,7 @@ function start_master() {
 ZOO_CLUSTER=$ZOO_CLUSTER
 quorum=$quorum
 i=$i
+volume=$VOLUME/master/$i
 IMAGE_NAME=$IMAGE_NAME
 HOST_INTERFACE=$HOST_INTERFACE
 DOMAIN_NAME=$DOMAIN_NAME
@@ -119,6 +125,7 @@ mesos_command=/tmp/mesos/build/bin/mesos-master.sh
 consul_command=\"$command -server -dc=$DATACENTER_NAME -ui-dir=/ui -bind=${SDN_IP%%/*}\"" > mesos_master_${i}_temp.sh
     echo '
 CONTAINER_ID=$(sudo docker run -d \
+    -v $volume:/var/mesos \
     -e MESOS_WORK_DIR=/var/mesos \
     -e MESOS_LOG_DIR=/var/log \
     -e MESOS_ZK=zk://$ZOO_CLUSTER/mesos \
@@ -147,8 +154,8 @@ sudo ./pipework $HOST_INTERFACE -i $CONTAINER_IF \
   rm -f ${script_prefix}_*_temp.sh
 }
 
-get_opts $@
 current_dir=$(pwd)
+get_opts $@
 
 script_prefix="mesos_master"
 container_name=${script_prefix}
