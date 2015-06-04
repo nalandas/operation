@@ -4,27 +4,57 @@ set +x
 echo "Arguments list:"
 echo "\$1: Zookeeper node number, default is 3"
 echo "\$2: Docker image name, default: zookeeper:3.4.6"
+source ./utils
 
-NODE_COUNT=${1:-3}
-IMAGE_NAME=${2:-zookeeper:3.4.6}
+usage() {
+  echo "Options:"
+  echo " -h, --help                              Show help info"
+  echo " -n, --node <Zookeeper node number>      Zookeeper node number, default is 3"
+  echo " -m, --image <docker image>              Docker image name, default: zookeeper:3.4.6"
+  echo " -v, --volume <local file dir>           Zookeeper store the data into this foler, default: $current_dir/zookeeper"
+}
+
+function get_opts() {
+  OPTS=`getopt -o hn:m:v: -l help -l node: -l image: -l volume: -- "$@"`
+  if [ $? != 0 ]
+  then
+    usage
+    exit 1
+  fi
+  eval set -- "$OPTS"
+  # Default values
+  NODE_COUNT=3
+  IMAGE_NAME=zookeeper:3.4.6
+  CONTAINER_IP=""
+  VOLUME=$current_dir/zookeeper
+  while true ; do
+    case "$1" in
+        -h|--help) usage; exit 1;;
+        -n|--node) NODE_COUNT=$2; shift 2;;
+        -m|--image) IMAGE_NAME=$2; shift 2;;
+        -v|--volume) VOLUME=$2; shift 2;;
+        --) shift; break;;
+    esac
+  done
+}
+
 current_dir=$(pwd)
+get_opts $@
 
 # Run zookeeper cluster
-rm -rf ./zookeeper/conf
-mkdir -p ./zookeeper/conf
+rm -rf $VOLUME/conf
 for (( i=1; i<=$NODE_COUNT; i++ ))
 do
   port1=$(expr 2887 + $i)
   port2=$(expr 3887 + $i)
   port3=$(expr 2180 + $i)
-  mkdir -p ./zookeeper/data/$i
   sudo docker rm -f zookeeper_$i
-  sudo docker run --restart=always -d -e ZOO_ID=$i -p $port1:2888 -p $port2:3888 -p $port3:2181 -v $current_dir/zookeeper/data/$i:/var/lib/zookeeper -v $current_dir/zookeeper/conf:/opt/zookeeper/conf --name zookeeper_$i $IMAGE_NAME
+  sudo docker run -d -e ZOO_ID=$i -p $port1:2888 -p $port2:3888 -p $port3:2181 -v $VOLUME/data/$i:/var/lib/zookeeper -v $VOLUME/conf:/opt/zookeeper/conf --name zookeeper_$i $IMAGE_NAME
 done
 
 #local_ip="$(ifconfig $INTERFACE | grep 'inet ' | awk '{print $2}')"
 # Generate zookeeper conf
-/bin/cp -f ../../zookeeper/conf/zoo.cfg ./zookeeper/conf/zoo.cfg.tmp
+/bin/cp -f ../../zookeeper/conf/zoo.cfg $VOLUME/conf/zoo.cfg.tmp
 for (( i=1; i<=$NODE_COUNT; i++ ))
 do
   #port1=$(expr 2887 + $i)
@@ -32,6 +62,6 @@ do
   #port3=$(expr 2180 + $i)
   # get container ip
   container_ip=$(./docker-ip zookeeper_${i})
-  echo "server.$i=$container_ip:2888:3888" >> ./zookeeper/conf/zoo.cfg.tmp
+  echo "server.$i=$container_ip:2888:3888" >> $VOLUME/conf/zoo.cfg.tmp
 done
-mv ./zookeeper/conf/zoo.cfg.tmp ./zookeeper/conf/zoo.cfg
+mv $VOLUME/conf/zoo.cfg.tmp $VOLUME/conf/zoo.cfg

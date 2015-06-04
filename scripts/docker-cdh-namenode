@@ -50,7 +50,7 @@ fi
 container_name=${script_prefix}
 sudo docker rm -f $container_name
 sudo mkdir -p $VOLUME
-PARAMS="-p 8020:8020 -p 50070:50070 -p 50470:50470 -v $VOLUME:/var/lib/hadoop-hdfs/cache/hdfs/dfs/name \
+PARAMS="--restart=always -p 8020:8020 -p 50070:50070 -p 50470:50470 -v $VOLUME:/var/lib/hadoop-hdfs/cache/hdfs/dfs/name \
  --name $container_name $IMAGE_NAME"
 if [ x"$CONTAINER_IP" != x"" ]; then
   PARAMS="-e CONTAINER_IF=$CONTAINER_IF "$PARAMS

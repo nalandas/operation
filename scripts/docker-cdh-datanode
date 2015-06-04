@@ -11,7 +11,7 @@ usage() {
   echo " -o, --host-if <ethernet interface>      Ethernet interface which is used to communicate with the datanode on host, default: 'eth0'"
   echo " -c, --container-if <ethernet interface> Ethernet interface which is used to assign IP address on container, default: 'eth1'"
   echo " -m, --image <docker image>              Docker image name, default: hadoop-cdh5-hdfs-datanode:0.0.1"
-  echo " -v, --volume <local file dir>           DFS data node should store its blocks, default: $current/dn"
+  echo " -v, --volume <local file dir>           DFS data node should store its blocks into this folder, default: $current/dn"
   echo " -i, --container-ip <docker ip>          IP address of contatiner, example: dhcp or 192.168.200.23/24@192.168.200.1, if it does not provided, will use the ip address on hosts for port mapping."
 }
 
@@ -89,8 +89,9 @@ echo 'params="-p $HDFS_DATANODE_SERVER_PORT:$HDFS_DATANODE_SERVER_PORT -p $HDFS_
 -p $HDFS_DATANODE_HTTP_PORT:$HDFS_DATANODE_HTTP_PORT -p $HDFS_DATANODE_HTTPS_PORT:$HDFS_DATANODE_HTTPS_PORT \
 -e HDFS_DATANODE_SERVER_PORT=$HDFS_DATANODE_SERVER_PORT -e HDFS_DATANODE_IPC_PORT=$HDFS_DATANODE_IPC_PORT \
 -e HDFS_DATANODE_HTTP_PORT=$HDFS_DATANODE_HTTP_PORT -e HDFS_DATANODE_HTTPS_PORT=$HDFS_DATANODE_HTTPS_PORT \
--e HDFSNAMENODERPC_SERVICE_HOST=$HDFS_NN_SERVER -e HDFSNAMENODERPC_SERVICE_PORT=$HDFS_NN_PORT 
--v $volume_dir:/var/lib/hadoop-hdfs/cache/hdfs/dfs/data"' >> $script_file
+-e HDFSNAMENODERPC_SERVICE_HOST=$HDFS_NN_SERVER -e HDFSNAMENODERPC_SERVICE_PORT=$HDFS_NN_PORT \
+-v $volume_dir:/var/lib/hadoop-hdfs/cache/hdfs/dfs/data \
+--restart=always"' >> $script_file
 if [ x"" != x"$SDN_IP" ]; then
   echo 'params=$params" -e CONTAINER_IF=$CONTAINER_IF --hostname=${SDN_IP%%/*}"' >> $script_file
 else
