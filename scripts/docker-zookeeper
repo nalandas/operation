@@ -1,9 +1,6 @@
 #!/bin/bash
-set +x
+#set +x
 #INTERFACE='eth0'
-echo "Arguments list:"
-echo "\$1: Zookeeper node number, default is 3"
-echo "\$2: Docker image name, default: zookeeper:3.4.6"
 source ./utils
 
 usage() {
