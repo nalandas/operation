@@ -13,12 +13,14 @@ usage() {
   echo " -m, --image <docker image>              Docker image name, default: mesos:0.0.2"
   echo " -i, --container-ip <docker ip>          IP address of contatiner, default: dhcp"
   echo " -p, --jks-pass <JKS password>           JKS password which is used to generate the SSL key and certificate the jks when run marathon, the certicate (nalanda.jks) is under the $current_dir/ssl/."
+  echo " -l, --ssl-path <SSL key location>       Specify the nalanda.jks location, default: $current_dir/ssl/"
+  echo " -u, --artifact_url <URL>                URL to the artifact store. Examples: hdfs://localhost:8020/path/to/store, file:///var/log/store. Default: file:///var/log"
   echo " -d, --dns-server <DNS server>           DNS server in Mesos"
   echo " -s, --dns-search <DNS search>           DNS search in Mesos"
 }
 
 function get_opts() {
-  OPTS=`getopt -o hn:z:o:c:m:i:p:d:s:f: -l help -l node: -l zk: -l host-if: -l container-if: -l image: -l container-ip: -l jks-pass: -l dns-server: -l dns-search: -l framework: -- "$@"`
+  OPTS=`getopt -o hn:z:o:c:m:i:p:d:s:f:l:u: -l help -l node: -l zk: -l host-if: -l container-if: -l image: -l container-ip: -l jks-pass: -l dns-server: -l dns-search: -l framework: -l ssl-path: -l artifact_url: -- "$@"`
   if [ $? != 0 ]
   then
     usage
@@ -35,6 +37,8 @@ function get_opts() {
   DISABLE_CONSUL=true
   NALANDA_JKS_PASSWORD=passw0rd
   MESOS_FRAMEWORK=marathon
+  SSL_PATH=$current_dir/ssl
+  ARTIFACT_URL=file:///var/log
   while true ; do
     case "$1" in
         -h|--help) usage; exit 1;;
@@ -48,6 +52,8 @@ function get_opts() {
         -d|--dns-server) MESOS_DNS_SERVER=$2; shift 2;;
         -s|--dns-search) MESOS_DNS_SEARCH=$2; shift 2;;
         -f|--framework) MESOS_FRAMEWORK=$2; shift 2;;
+        -l|--ssl-path) SSL_PATH=$2; shift 2;;
+        -u|--artifact_url) ARTIFACT_URL=$2; shift 2;;
         --) shift; break;;
     esac
   done
@@ -75,10 +81,14 @@ HOST_INTERFACE=$HOST_INTERFACE
 SDN_IP=$SDN_IP
 DISABLE_CONSUL=$DISABLE_CONSUL
 MESOS_DNS_SERVER=$MESOS_DNS_SERVER
-MESOS_DNS_SEARCH=$MESOS_DNS_SEARCH" > marathon_${i}_temp.sh
+MESOS_DNS_SEARCH=$MESOS_DNS_SEARCH
+SSL_PATH=$SSL_PATH
+ARTIFACT_URL=$ARTIFACT_URL" > marathon_${i}_temp.sh
     echo '
 CONTAINER_ID=`sudo docker run -d \
-    -v $current_dir/ssl:/tmp/ssl \
+    -v $SSL_PATH:/tmp/ssl \
+    -e MESOS_NATIVE_JAVA_LIBRARY=/tmp/mesos/build/src/.libs/libmesos.so \
+    -e MARATHON_ARTIFACT_STORE=$ARTIFACT_URL \
     -e MARATHON_MASTER=zk://$ZOO_CLUSTER/mesos \
     -e MARATHON_ZK=zk://$ZOO_CLUSTER/marathon \
     -e MARATHON_SSL_KEYSTORE_PATH=/tmp/ssl/nalanda.jks \
@@ -115,6 +125,7 @@ i=$i
 IMAGE_NAME=$IMAGE_NAME
 HOST_INTERFACE=$HOST_INTERFACE
 SDN_IP=$SDN_IP
+SSL_PATH=$SSL_PATH
 DISABLE_CONSUL=$DISABLE_CONSUL
 MESOS_DNS_SERVER=$MESOS_DNS_SERVER
 MESOS_DNS_SEARCH=$MESOS_DNS_SEARCH" > chronos_${i}_temp.sh
@@ -129,9 +140,10 @@ MESOS_DNS_SEARCH=$MESOS_DNS_SEARCH" > chronos_${i}_temp.sh
     echo "8443" > $current_dir/chronos/conf/chronos_${i}/https_port
     echo '
 CONTAINER_ID=`sudo docker run -d \
-    -v $current_dir/ssl:/tmp/ssl \
+    -v $SSL_PATH:/tmp/ssl \
     -v $current_dir/chronos/conf/chronos_${i}:/etc/chronos/conf \
     -e CONTAINER_IF=$CONTAINER_IF \
+    -e MESOS_NATIVE_JAVA_LIBRARY=/tmp/mesos/build/src/.libs/libmesos.so \
     -e MULTICLOUD_DNS=${MESOS_DNS_SERVER} \
     -e MULTICLOUD_DNS_SEARCH=${MESOS_DNS_SEARCH} \
     -e DISABLE_CONSUL=$DISABLE_CONSUL \
@@ -155,11 +167,11 @@ if [ x"$NALANDA_JKS_PASSWORD" = x"" ]; then
   exit 1
 fi
 
-if [ -f $current_dir/ssl/nalanda.jks ]; then
-  echo "Find $current_dir/ssl/nalanda.jks, will use it."
+if [ -f $SSL_PATH/nalanda.jks ]; then
+  echo "Find $SSL_PATH/nalanda.jks, will use it."
 else
   echo "Generate new SLL certificate!!"
-  generate_ssl_certificate_jks $current_dir/ssl/ "nalanda" "$NALANDA_JKS_PASSWORD"
+  generate_ssl_certificate_jks $SSL_PATH "nalanda" "$NALANDA_JKS_PASSWORD"
 fi
 
 case "$MESOS_FRAMEWORK" in
